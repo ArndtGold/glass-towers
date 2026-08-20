@@ -51,6 +51,17 @@ export class GameRuntime {
         return
       }
       this.rendererSession = rendererSession
+      sceneBundle.configureRendererBackend(rendererSession.status.backend)
+      rendererSession.renderer.render(sceneBundle.scene, sceneBundle.camera)
+      const gallery = sceneBundle.getGalleryDiagnostics()
+      this.canvas.dataset.galleryReady = 'true'
+      this.canvas.dataset.galleryProfile = gallery.profile
+      this.canvas.dataset.galleryGroups = String(gallery.groupCount)
+      this.canvas.dataset.galleryMeshes = String(gallery.meshCount)
+      this.canvas.dataset.galleryDrawCalls = String(gallery.drawCallCount)
+      this.canvas.dataset.galleryGeometries = String(gallery.uniqueGeometryCount)
+      this.canvas.dataset.galleryMaterials = String(gallery.materialCount)
+      this.canvas.dataset.galleryTextureBytes = String(gallery.textureBytes)
       const physics = await PhysicsWorld.create()
       if (this.disposed) {
         physics.dispose()
@@ -113,6 +124,7 @@ export class GameRuntime {
       this.pieceObjects.set(id, object)
     }
     this.canvas.dataset.stressPieces = String(count)
+    this.rendererSession?.renderer.render(this.sceneBundle.scene, this.sceneBundle.camera)
     this.stressStartedAt = performance.now()
   }
 
@@ -282,5 +294,13 @@ export class GameRuntime {
     this.rendererSession = null
     this.sceneBundle?.dispose()
     this.sceneBundle = null
+    delete this.canvas.dataset.galleryReady
+    delete this.canvas.dataset.galleryProfile
+    delete this.canvas.dataset.galleryGroups
+    delete this.canvas.dataset.galleryMeshes
+    delete this.canvas.dataset.galleryDrawCalls
+    delete this.canvas.dataset.galleryGeometries
+    delete this.canvas.dataset.galleryMaterials
+    delete this.canvas.dataset.galleryTextureBytes
   }
 }

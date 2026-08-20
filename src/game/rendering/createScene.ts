@@ -1,36 +1,36 @@
 import {
-  AmbientLight,
   BoxGeometry,
   Color,
   CylinderGeometry,
-  DirectionalLight,
   Fog,
   Group,
+  HemisphereLight,
   Mesh,
   Object3D,
   PerspectiveCamera,
-  PlaneGeometry,
   Scene,
-  SpotLight,
   type BufferGeometry,
   type Material,
 } from 'three'
 import type { PieceDefinition } from '../pieces/catalog'
 import type { RendererBackend } from '../types'
-import { createGalleryMaterial, createGlassMaterial } from './createMaterials'
+import { createGalleryEnvironment, type GalleryEnvironmentDiagnostics } from './createGalleryEnvironment'
+import { createGalleryMaterialSet, createGlassMaterial, type GalleryMaterialSet } from './createMaterials'
 
 export interface SceneBundle {
   scene: Scene
   camera: PerspectiveCamera
   worldRoot: Group
   createPieceObject: (piece: PieceDefinition, backend: RendererBackend) => Object3D
+  configureRendererBackend: (backend: RendererBackend) => void
+  getGalleryDiagnostics: () => GalleryEnvironmentDiagnostics
   dispose: () => void
 }
 
 export function createSceneBundle(aspect: number): SceneBundle {
   const scene = new Scene()
-  scene.background = new Color(0xe9e4df)
-  scene.fog = new Fog(0xe9e4df, 18, 38)
+  scene.background = new Color(0xbab5b1)
+  scene.fog = new Fog(0xbab5b1, 24, 52)
 
   const camera = new PerspectiveCamera(36, aspect, 0.1, 80)
   camera.position.set(7.8, 5.6, 10.8)
@@ -49,52 +49,31 @@ export function createSceneBundle(aspect: number): SceneBundle {
     return value
   }
 
-  const floorMaterial = createGalleryMaterial(0xded8d1, 0.92)
-  const pedestalMaterial = createGalleryMaterial(0xf1eeea, 0.56)
-  const backdropMaterial = createGalleryMaterial(0xf3efeb, 0.98)
-  const panelMaterial = createGalleryMaterial(0xd8d0ca, 0.9)
-  materials.set('gallery-floor', floorMaterial)
-  materials.set('gallery-pedestal', pedestalMaterial)
-  materials.set('gallery-backdrop', backdropMaterial)
-  materials.set('gallery-panel', panelMaterial)
+  let galleryMaterials: GalleryMaterialSet = createGalleryMaterialSet('compatible')
+  const gallery = createGalleryEnvironment(geometry, galleryMaterials)
+  gallery.root.visible = false
+  worldRoot.add(gallery.root)
+  scene.environment = null
+  scene.add(new HemisphereLight(0xfff8ef, 0x7f8a98, 1.35))
+  let configuredBackend: RendererBackend | null = null
+  let disposed = false
 
-  const floor = new Mesh(geometry('floor', () => new PlaneGeometry(32, 32)), floorMaterial)
-  floor.rotation.x = -Math.PI / 2
-  floor.position.y = -0.22
-  floor.receiveShadow = true
-  worldRoot.add(floor)
-
-  const pedestal = new Mesh(geometry('pedestal', () => new BoxGeometry(2.5, 0.42, 2.5)), pedestalMaterial)
-  pedestal.position.y = 0
-  pedestal.castShadow = true
-  pedestal.receiveShadow = true
-  worldRoot.add(pedestal)
-
-  const backdrop = new Mesh(geometry('backdrop', () => new PlaneGeometry(22, 15)), backdropMaterial)
-  backdrop.position.set(0, 6.2, -6.5)
-  worldRoot.add(backdrop)
-
-  const leftPanel = new Mesh(geometry('panel', () => new BoxGeometry(3.4, 10, 0.35)), panelMaterial)
-  leftPanel.position.set(-7.5, 4.6, -2)
-  leftPanel.rotation.y = -0.22
-  worldRoot.add(leftPanel)
-
-  const rightPanel = leftPanel.clone()
-  rightPanel.position.x = 7.5
-  rightPanel.rotation.y = 0.22
-  worldRoot.add(rightPanel)
-
-  scene.add(new AmbientLight(0xffffff, 2.05))
-  const key = new SpotLight(0xfff7ed, 135, 35, Math.PI / 5, 0.55, 1.4)
-  key.position.set(6, 12, 8)
-  key.target.position.set(0, 2, 0)
-  scene.add(key, key.target)
-  const rim = new DirectionalLight(0xb9d8f2, 2.4)
-  rim.position.set(-6, 7, -4)
-  scene.add(rim)
-  const fill = new DirectionalLight(0xffc8d6, 1.7)
-  fill.position.set(5, 3, 4)
-  scene.add(fill)
+  const configureRendererBackend = (backend: RendererBackend) => {
+    if (disposed || configuredBackend === backend) return
+    configuredBackend = backend
+    gallery.root.visible = true
+    const profile = backend === 'webgpu' ? 'high' : 'compatible'
+    gallery.configureProfile(profile)
+    if (galleryMaterials.profile === profile) {
+      scene.environment = profile === 'high' ? galleryMaterials.environment : null
+      return
+    }
+    const previous = galleryMaterials
+    galleryMaterials = createGalleryMaterialSet(profile)
+    gallery.applyMaterials(galleryMaterials)
+    scene.environment = profile === 'high' ? galleryMaterials.environment : null
+    previous.dispose()
+  }
 
   const createPieceObject = (piece: PieceDefinition, backend: RendererBackend) => {
     const group = new Group()
@@ -139,11 +118,17 @@ export function createSceneBundle(aspect: number): SceneBundle {
     camera,
     worldRoot,
     createPieceObject,
+    configureRendererBackend,
+    getGalleryDiagnostics: gallery.diagnostics,
     dispose: () => {
+      if (disposed) return
+      disposed = true
       geometries.forEach((value) => value.dispose())
       materials.forEach((value) => value.dispose())
+      galleryMaterials.dispose()
       geometries.clear()
       materials.clear()
+      scene.environment = null
       scene.clear()
     },
   }

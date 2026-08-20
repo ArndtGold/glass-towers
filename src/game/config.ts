@@ -12,4 +12,8 @@ export const GAME_CONFIG = {
   rendererStableFrameTimeoutMs: 2_000,
   maxPixelRatioWebGpu: 2,
   maxPixelRatioWebGl2: 1,
+  galleryMaxDrawCalls: 28,
+  galleryMaxGeometries: 14,
+  galleryMaxMaterials: 8,
+  galleryMaxTextureBytes: 4 * 1024 * 1024,
 } as const
