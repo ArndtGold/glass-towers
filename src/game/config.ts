@@ -1,0 +1,15 @@
+export const GAME_CONFIG = {
+  horizontalLimit: 2.1,
+  pedestalTopY: 0.2,
+  spawnClearance: 2.6,
+  fallBoundaryY: -3,
+  fixedTimeStep: 1 / 60,
+  maxCatchUpSteps: 5,
+  linearSleepThreshold: 0.08,
+  angularSleepThreshold: 0.12,
+  stableStepCount: 30,
+  rendererPresentationTimeoutMs: 8_000,
+  rendererStableFrameTimeoutMs: 2_000,
+  maxPixelRatioWebGpu: 2,
+  maxPixelRatioWebGl2: 1,
+} as const
