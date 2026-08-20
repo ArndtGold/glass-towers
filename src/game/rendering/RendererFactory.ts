@@ -1,11 +1,32 @@
-import type { Camera, Scene } from 'three'
-import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
+import type { Camera, Scene, ToneMapping } from 'three'
+import { ACESFilmicToneMapping, SRGBColorSpace, WebGLRenderer } from 'three'
 import { WebGPURenderer } from 'three/webgpu'
 import { GAME_CONFIG } from '../config'
 import type { RendererBackend, RendererFailure, RendererStatus } from '../types'
 import type { RendererTestMode } from '../testing/rendererStrategy'
 
-export type GlassRenderer = WebGPURenderer
+export interface GlassRenderer {
+  outputColorSpace: string
+  toneMapping: ToneMapping
+  toneMappingExposure: number
+  setPixelRatio: (value: number) => void
+  setSize: (width: number, height: number, updateStyle?: boolean) => void
+  render: (scene: Scene, camera: Camera) => void
+  dispose: () => void
+}
+
+export interface RendererAdapter {
+  backend: RendererBackend
+  create: (canvas: HTMLCanvasElement) => GlassRenderer
+  initialize: (renderer: GlassRenderer) => Promise<void>
+}
+
+export interface RendererDependencies {
+  hasWebGpu: () => boolean | Promise<boolean>
+  webGpu: RendererAdapter
+  webGl2: RendererAdapter
+  nextFrame: () => Promise<void>
+}
 
 export interface RendererSession {
   renderer: GlassRenderer
@@ -25,27 +46,52 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, label: str
   }
 }
 
-const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-
-const backendOf = (renderer: GlassRenderer): RendererBackend => {
-  const backend = renderer.backend as unknown as { isWebGLBackend?: boolean }
-  return backend.isWebGLBackend ? 'webgl2' : 'webgpu'
+const browserDependencies: RendererDependencies = {
+  hasWebGpu: async () => {
+    const gpu = (typeof navigator === 'undefined' ? undefined : navigator.gpu) as
+      | { requestAdapter: () => Promise<unknown> }
+      | undefined
+    if (!gpu) return false
+    try {
+      return Boolean(await gpu.requestAdapter())
+    } catch {
+      return false
+    }
+  },
+  webGpu: {
+    backend: 'webgpu',
+    create: (canvas) => new WebGPURenderer({ canvas, antialias: true }),
+    initialize: async (renderer) => {
+      await (renderer as WebGPURenderer).init()
+    },
+  },
+  webGl2: {
+    backend: 'webgl2',
+    create: (canvas) => {
+      const context = canvas.getContext('webgl2')
+      if (!context) throw new Error('WebGL2 context is unavailable')
+      return new WebGLRenderer({ canvas, context })
+    },
+    initialize: async () => undefined,
+  },
+  nextFrame: () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
 }
 
 async function createAttempt(
   canvas: HTMLCanvasElement,
   scene: Scene,
   camera: Camera,
-  forceWebGL: boolean,
+  adapter: RendererAdapter,
+  nextFrame: () => Promise<void>,
 ): Promise<RendererSession> {
-  const renderer = new WebGPURenderer({ canvas, antialias: true, forceWebGL })
+  const renderer = adapter.create(canvas)
   renderer.outputColorSpace = SRGBColorSpace
   renderer.toneMapping = ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.08
 
   try {
-    await withTimeout(renderer.init(), GAME_CONFIG.rendererPresentationTimeoutMs, 'Renderer initialization')
-    const backend = backendOf(renderer)
+    await withTimeout(adapter.initialize(renderer), GAME_CONFIG.rendererPresentationTimeoutMs, 'Renderer initialization')
+    const backend = adapter.backend
     const pixelRatioLimit = backend === 'webgpu' ? GAME_CONFIG.maxPixelRatioWebGpu : GAME_CONFIG.maxPixelRatioWebGl2
     renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, pixelRatioLimit))
     renderer.setSize(Math.max(1, canvas.clientWidth), Math.max(1, canvas.clientHeight), false)
@@ -75,6 +121,7 @@ export async function createRendererSession(
   scene: Scene,
   camera: Camera,
   mode: RendererTestMode,
+  dependencies: RendererDependencies = browserDependencies,
 ): Promise<RendererSession> {
   if (mode === 'fail-all') {
     const failure: RendererFailure = {
@@ -88,17 +135,30 @@ export async function createRendererSession(
     throw failure
   }
 
-  if (mode === 'force-webgl2') return createAttempt(canvas, scene, camera, true)
+  if (mode === 'force-webgl2') {
+    try {
+      return await createAttempt(canvas, scene, camera, dependencies.webGl2, dependencies.nextFrame)
+    } catch (error) {
+      const failure: RendererFailure = {
+        kind: 'renderer-unavailable',
+        message: 'Glass Towers could not initialize its WebGL2 fallback.',
+        attempts: [{ mode: 'forced-webgl2', reason: error instanceof Error ? error.message : String(error) }],
+      }
+      throw failure
+    }
+  }
 
   const attempts: RendererFailure['attempts'] = []
-  try {
-    return await createAttempt(canvas, scene, camera, false)
-  } catch (error) {
-    attempts.push({ mode: 'auto', reason: error instanceof Error ? error.message : String(error) })
+  if (await dependencies.hasWebGpu()) {
+    try {
+      return await createAttempt(canvas, scene, camera, dependencies.webGpu, dependencies.nextFrame)
+    } catch (error) {
+      attempts.push({ mode: 'auto', reason: error instanceof Error ? error.message : String(error) })
+    }
   }
 
   try {
-    return await createAttempt(canvas, scene, camera, true)
+    return await createAttempt(canvas, scene, camera, dependencies.webGl2, dependencies.nextFrame)
   } catch (error) {
     attempts.push({ mode: 'forced-webgl2', reason: error instanceof Error ? error.message : String(error) })
   }

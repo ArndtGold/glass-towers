@@ -4,7 +4,7 @@ import { writeFile } from 'node:fs/promises'
 test.use({ viewport: { width: 640, height: 360 } })
 
 for (const [name, query] of [['auto', ''], ['forced-webgl2', '&renderer=webgl2']] as const) {
-  test(`${name} stays responsive with 20 physics bodies`, async ({ page }) => {
+  test(`${name} stays responsive with 20 physics bodies`, async ({ page }, testInfo) => {
     const errors: string[] = []
     page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
     page.on('pageerror', (error) => errors.push(error.message))
@@ -19,7 +19,7 @@ for (const [name, query] of [['auto', ''], ['forced-webgl2', '&renderer=webgl2']
     expect(p95Work).toBeLessThanOrEqual(33.3)
     expect(errors, errors.join('\n')).toEqual([])
     await writeFile(
-      `.agdf/control/artefacts/glass-towers/evidence/performance-${name}.json`,
+      `.agdf/control/artefacts/glass-towers/evidence/performance-${testInfo.project.name}-${name}.json`,
       `${JSON.stringify({ viewport: '640x360', bodies: 20, duration_ms: 10_000, samples, p95_frame_ms: p95Frame, p95_work_ms: p95Work }, null, 2)}\n`,
     )
   })
