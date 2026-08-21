@@ -1,30 +1,81 @@
 import {
-  BoxGeometry,
   Color,
-  CylinderGeometry,
   Fog,
   Group,
   HemisphereLight,
+  LatheGeometry,
   Mesh,
   Object3D,
   PerspectiveCamera,
   Scene,
+  Vector2,
   type BufferGeometry,
   type Material,
 } from 'three'
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { PieceDefinition } from '../pieces/catalog'
 import type { RendererBackend } from '../types'
 import { createGalleryEnvironment, type GalleryEnvironmentDiagnostics } from './createGalleryEnvironment'
 import { createGalleryMaterialSet, createGlassMaterial, type GalleryMaterialSet } from './createMaterials'
+import type { CameraHomeComposition } from '../camera/CameraFramingController'
+
+export const CAMERA_HOME: CameraHomeComposition = {
+  position: [7.8, 5.6, 10.8],
+  target: [0, 2.2, 0],
+}
 
 export interface SceneBundle {
   scene: Scene
   camera: PerspectiveCamera
+  cameraHome: CameraHomeComposition
   worldRoot: Group
   createPieceObject: (piece: PieceDefinition, backend: RendererBackend) => Object3D
   configureRendererBackend: (backend: RendererBackend) => void
   getGalleryDiagnostics: () => GalleryEnvironmentDiagnostics
   dispose: () => void
+}
+
+const bevelRadius = (dimensions: readonly [number, number, number]) =>
+  Math.max(0.015, Math.min(0.045, Math.min(...dimensions) * 0.03))
+
+export function createPieceVisualGeometry(piece: PieceDefinition): BufferGeometry {
+  if (piece.geometry === 'cylinder') {
+    const [diameter, height] = piece.dimensions
+    const radius = diameter / 2
+    const halfHeight = height / 2
+    const bevel = bevelRadius(piece.dimensions)
+    return new LatheGeometry(
+      [
+        new Vector2(0, -halfHeight),
+        new Vector2(radius - bevel, -halfHeight),
+        new Vector2(radius, -halfHeight + bevel),
+        new Vector2(radius, halfHeight - bevel),
+        new Vector2(radius - bevel, halfHeight),
+        new Vector2(0, halfHeight),
+      ],
+      32,
+    )
+  }
+  if (piece.geometry === 'compound') {
+    const segments = piece.colliders.map((collider) => {
+      const dimensions: [number, number, number] = collider.halfExtents.map((value) => value * 2) as [
+        number,
+        number,
+        number,
+      ]
+      const value = new RoundedBoxGeometry(...dimensions, 1, bevelRadius(dimensions))
+      const [x, y, z] = collider.offset ?? [0, 0, 0]
+      value.translate(x, y, z)
+      return value
+    })
+    const merged = mergeGeometries(segments)
+    segments.forEach((segment) => segment.dispose())
+    if (!merged) throw new Error(`Could not merge visual geometry for piece ${piece.id}`)
+    return merged
+  }
+  const [x, y, z] = piece.dimensions
+  return new RoundedBoxGeometry(x, y, z, 1, bevelRadius(piece.dimensions))
 }
 
 export function createSceneBundle(aspect: number): SceneBundle {
@@ -33,8 +84,8 @@ export function createSceneBundle(aspect: number): SceneBundle {
   scene.fog = new Fog(0xbab5b1, 24, 52)
 
   const camera = new PerspectiveCamera(36, aspect, 0.1, 80)
-  camera.position.set(7.8, 5.6, 10.8)
-  camera.lookAt(0, 2.2, 0)
+  camera.position.set(...CAMERA_HOME.position)
+  camera.lookAt(...CAMERA_HOME.target)
 
   const worldRoot = new Group()
   scene.add(worldRoot)
@@ -80,35 +131,13 @@ export function createSceneBundle(aspect: number): SceneBundle {
     const materialKey = `glass-${piece.id}-${backend}`
     let material = materials.get(materialKey)
     if (!material) {
-      material = createGlassMaterial(piece.color, backend)
+      material = createGlassMaterial(piece, backend, galleryMaterials.environment)
       materials.set(materialKey, material)
     }
-    if (piece.geometry === 'cylinder') {
-      const [x, y] = piece.dimensions
-      const mesh = new Mesh(geometry(`piece-${piece.id}`, () => new CylinderGeometry(x / 2, x / 2, y, 32)), material)
-      mesh.castShadow = true
-      mesh.receiveShadow = true
-      group.add(mesh)
-    } else if (piece.geometry === 'compound') {
-      for (const [index, collider] of piece.colliders.entries()) {
-        const [hx, hy, hz] = collider.halfExtents
-        const mesh = new Mesh(
-          geometry(`piece-${piece.id}-${index}`, () => new BoxGeometry(hx * 2, hy * 2, hz * 2, 2, 2, 2)),
-          material,
-        )
-        const [x, y, z] = collider.offset ?? [0, 0, 0]
-        mesh.position.set(x, y, z)
-        mesh.castShadow = true
-        mesh.receiveShadow = true
-        group.add(mesh)
-      }
-    } else {
-      const [x, y, z] = piece.dimensions
-      const mesh = new Mesh(geometry(`piece-${piece.id}`, () => new BoxGeometry(x, y, z, 2, 2, 2)), material)
-      mesh.castShadow = true
-      mesh.receiveShadow = true
-      group.add(mesh)
-    }
+    const mesh = new Mesh(geometry(`piece-${piece.id}`, () => createPieceVisualGeometry(piece)), material)
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    group.add(mesh)
     group.userData.pieceId = piece.id
     return group
   }
@@ -116,6 +145,7 @@ export function createSceneBundle(aspect: number): SceneBundle {
   return {
     scene,
     camera,
+    cameraHome: CAMERA_HOME,
     worldRoot,
     createPieceObject,
     configureRendererBackend,

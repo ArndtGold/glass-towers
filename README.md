@@ -1,4 +1,5 @@
-# Glass Towers
+![Intro: Glass Towser](assets/intro.png)
+
 
 Minimalistisches 3D-Browserspiel über das Balancieren transluzenter Formen. WebGPU wird bevorzugt; falls es nicht verfügbar oder nicht stabil initialisierbar ist, verwendet dieselbe Three.js-Szene automatisch WebGL2.
 

@@ -6,6 +6,8 @@ type RapierModule = typeof import('@dimforge/rapier3d-compat').default
 
 export interface PhysicsPieceSnapshot {
   id: number
+  pieceId: string
+  fallen: boolean
   position: { x: number; y: number; z: number }
   rotation: { x: number; y: number; z: number; w: number }
 }
@@ -147,6 +149,8 @@ export class PhysicsWorld {
       const rotation = piece.body.rotation()
       return {
         id: piece.id,
+        pieceId: piece.definition.id,
+        fallen: piece.fallen,
         position: { x: position.x, y: position.y, z: position.z },
         rotation: { x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w },
       }

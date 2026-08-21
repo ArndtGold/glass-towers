@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "test": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
-    "test:e2e": "playwright test tests/e2e/performance.spec.ts --grep auto && playwright test tests/e2e/performance.spec.ts --grep forced-webgl2 && playwright test tests/e2e/gameplay.spec.ts && playwright test tests/e2e/gallery.spec.ts && playwright test tests/e2e/galleryPerformance.spec.ts",
+    "test:e2e": "playwright test tests/e2e/performance.spec.ts --grep auto && playwright test tests/e2e/performance.spec.ts --grep forced-webgl2 && playwright test tests/e2e/gameplay.spec.ts && playwright test tests/e2e/gallery.spec.ts && playwright test tests/e2e/galleryPerformance.spec.ts && playwright test tests/e2e/glassMaterials.spec.ts && playwright test tests/e2e/cameraTracking.spec.ts",
     "preview": "vite preview"
   },
   "dependencies": {

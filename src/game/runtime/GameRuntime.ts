@@ -1,14 +1,18 @@
 import { MathUtils, Object3D, Vector3 } from 'three'
+import { CameraFramingController, type CameraFramingSample } from '../camera/CameraFramingController'
 import { GAME_CONFIG } from '../config'
 import { InputController } from '../input/InputController'
 import { PhysicsWorld } from '../physics/PhysicsWorld'
-import { createPieceSequence, getPieceDefinition } from '../pieces/catalog'
+import { createPieceSequence, getPieceDefinition, PIECE_CATALOG } from '../pieces/catalog'
 import type { BestScoreRepository } from '../persistence/BestScoreRepository'
 import { createRendererSession, isRendererFailure, type RendererSession } from '../rendering/RendererFactory'
 import { createSceneBundle, type SceneBundle } from '../rendering/createScene'
 import type { GameStore } from '../state/gameStore'
 import { resolveRendererTestMode } from '../testing/rendererStrategy'
 import type { GameIntent } from '../types'
+
+const CAMERA_PERFORMANCE_WARMUP_MS = 2_000
+const CAMERA_PERFORMANCE_MIN_SAMPLES = 300
 
 export class GameRuntime {
   private sceneBundle: SceneBundle | null = null
@@ -22,9 +26,21 @@ export class GameRuntime {
   private disposed = false
   private sequence = createPieceSequence(this.initialSeed())
   private cameraTarget = new Vector3(0, 2.2, 0)
+  private cameraHomeDirection = new Vector3()
+  private cameraFraming: CameraFramingController | null = null
+  private reducedMotionQuery: MediaQueryList | null = null
+  private reducedMotion = false
+  private readonly aimingCameraSample: CameraFramingSample = {
+    pieceId: 'prism',
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0, w: 1 },
+    fallen: false,
+    role: 'aiming',
+  }
   private stressStartedAt = 0
   private stressFrameTimes: number[] = []
   private stressWorkTimes: number[] = []
+  private cameraWorkTimes: number[] = []
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -38,6 +54,15 @@ export class GameRuntime {
     const height = Math.max(1, this.canvas.clientHeight)
     const sceneBundle = createSceneBundle(width / height)
     this.sceneBundle = sceneBundle
+    this.cameraFraming = new CameraFramingController(sceneBundle.cameraHome)
+    this.cameraTarget.set(...sceneBundle.cameraHome.target)
+    this.cameraHomeDirection
+      .set(
+        sceneBundle.cameraHome.position[0] - sceneBundle.cameraHome.target[0],
+        sceneBundle.cameraHome.position[1] - sceneBundle.cameraHome.target[1],
+        sceneBundle.cameraHome.position[2] - sceneBundle.cameraHome.target[2],
+      )
+      .normalize()
 
     try {
       const rendererSession = await createRendererSession(
@@ -78,8 +103,10 @@ export class GameRuntime {
         nextPieceId: next.id,
       })
       this.createAimingObject()
+      this.createPaletteFixtureIfRequested()
       this.input = new InputController(this.canvas, this.handleIntent)
       this.input.start()
+      this.bindReducedMotion()
       this.createStressFixtureIfRequested()
       window.addEventListener('resize', this.resize)
       this.lastTime = performance.now()
@@ -99,6 +126,17 @@ export class GameRuntime {
     if (!import.meta.env.DEV) return Date.now()
     const value = Number.parseInt(new URL(globalThis.location.href).searchParams.get('seed') ?? '', 10)
     return Number.isFinite(value) ? value : Date.now()
+  }
+
+  private bindReducedMotion() {
+    if (typeof globalThis.matchMedia !== 'function' || this.reducedMotionQuery) return
+    this.reducedMotionQuery = globalThis.matchMedia('(prefers-reduced-motion: reduce)')
+    this.reducedMotion = this.reducedMotionQuery.matches
+    this.reducedMotionQuery.addEventListener('change', this.handleReducedMotionChange)
+  }
+
+  private handleReducedMotionChange = (event: MediaQueryListEvent) => {
+    this.reducedMotion = event.matches
   }
 
   private createStressFixtureIfRequested() {
@@ -128,6 +166,24 @@ export class GameRuntime {
     this.stressStartedAt = performance.now()
   }
 
+  private createPaletteFixtureIfRequested() {
+    const sceneBundle = this.sceneBundle
+    if (!import.meta.env.DEV || !sceneBundle) return
+    const requested = new URL(globalThis.location.href).searchParams.get('palette')
+    if (requested !== '1') return
+    const backend = this.store.getState().backend
+    if (!backend) return
+    this.removeAimingObject()
+    PIECE_CATALOG.forEach((definition, index) => {
+      const object = sceneBundle.createPieceObject(definition, backend)
+      object.position.set((index - 2) * 1.35, 1.6, 0.6)
+      object.rotation.y = (index - 2) * 0.08
+      sceneBundle.worldRoot.add(object)
+      this.pieceObjects.set(-(index + 1), object)
+    })
+    this.canvas.dataset.palettePieces = PIECE_CATALOG.map((piece) => piece.id).join(',')
+  }
+
   private recordStressFrame(now: number, workStartedAt: number) {
     if (this.stressStartedAt === 0 || this.canvas.dataset.stressP95Frame) return
     this.stressFrameTimes.push(now - this.lastTime)
@@ -140,6 +196,17 @@ export class GameRuntime {
     this.canvas.dataset.stressSamples = String(this.stressFrameTimes.length)
     this.canvas.dataset.stressP95Frame = percentile95(this.stressFrameTimes).toFixed(2)
     this.canvas.dataset.stressP95Work = percentile95(this.stressWorkTimes).toFixed(2)
+  }
+
+  private recordCameraPerformance() {
+    if (this.cameraWorkTimes.length < CAMERA_PERFORMANCE_MIN_SAMPLES || this.canvas.dataset.cameraP95Work) return
+    const sorted = [...this.cameraWorkTimes].sort((a, b) => a - b)
+    const p95 = sorted[Math.floor(sorted.length * 0.95)] ?? Number.POSITIVE_INFINITY
+    this.canvas.dataset.cameraP95Work = p95.toFixed(3)
+    this.canvas.dataset.cameraSamples = String(this.cameraWorkTimes.length)
+    this.canvas.dataset.cameraTiming = this.cameraWorkTimes.every(
+      (value) => Math.abs(value - Math.round(value)) < 1e-6,
+    ) ? 'coarse' : 'fine'
   }
 
   private createAimingObject() {
@@ -206,7 +273,8 @@ export class GameRuntime {
     const delta = Math.min((now - this.lastTime) / 1000, 0.1)
 
     const events = this.physics.step(delta)
-    for (const snapshot of this.physics.snapshots()) {
+    const snapshots = this.physics.snapshots()
+    for (const snapshot of snapshots) {
       const object = this.pieceObjects.get(snapshot.id)
       if (!object) continue
       object.position.set(snapshot.position.x, snapshot.position.y, snapshot.position.z)
@@ -243,15 +311,49 @@ export class GameRuntime {
       this.aimingObject.position.y = this.spawnHeight() + Math.sin(now * 0.0023) * 0.06
     }
 
-    const height = this.physics.towerHeight()
-    const targetY = Math.max(2.2, height * 0.55)
-    this.cameraTarget.y = MathUtils.lerp(this.cameraTarget.y, targetY, 1 - Math.exp(-delta * 2.3))
-    this.sceneBundle.camera.position.y = MathUtils.lerp(
-      this.sceneBundle.camera.position.y,
-      Math.max(5.6, height + 3.2),
-      1 - Math.exp(-delta * 1.7),
-    )
-    this.sceneBundle.camera.lookAt(this.cameraTarget)
+    const cameraWorkStartedAt = performance.now()
+    const state = this.store.getState()
+    let aimingSample: CameraFramingSample | undefined
+    if (this.aimingObject && state.phase === 'aiming' && state.currentPieceId) {
+      const sample = this.aimingCameraSample
+      sample.pieceId = state.currentPieceId
+      sample.position.x = this.aimingObject.position.x
+      sample.position.y = this.aimingObject.position.y
+      sample.position.z = this.aimingObject.position.z
+      sample.rotation.x = this.aimingObject.quaternion.x
+      sample.rotation.y = this.aimingObject.quaternion.y
+      sample.rotation.z = this.aimingObject.quaternion.z
+      sample.rotation.w = this.aimingObject.quaternion.w
+      aimingSample = sample
+    }
+    const framing = this.cameraFraming?.step({
+      deltaSeconds: delta,
+      phase: state.phase,
+      runId: state.runId,
+      aspect: this.sceneBundle.camera.aspect,
+      verticalFovDegrees: this.sceneBundle.camera.fov,
+      reducedMotion: this.reducedMotion,
+      samples: snapshots,
+      aimingSample,
+    })
+    if (framing) {
+      this.cameraTarget.set(0, framing.targetY, 0)
+      this.sceneBundle.camera.position.copy(this.cameraTarget).addScaledVector(this.cameraHomeDirection, framing.distance)
+      this.sceneBundle.camera.lookAt(this.cameraTarget)
+      if (import.meta.env.DEV) {
+        this.canvas.dataset.cameraTargetY = framing.targetY.toFixed(3)
+        this.canvas.dataset.cameraDistance = framing.distance.toFixed(3)
+        this.canvas.dataset.cameraMode = framing.mode
+      }
+    }
+    if (
+      this.stressStartedAt > 0
+      && now - this.stressStartedAt >= CAMERA_PERFORMANCE_WARMUP_MS
+      && !this.canvas.dataset.cameraP95Work
+    ) {
+      this.cameraWorkTimes.push(performance.now() - cameraWorkStartedAt)
+      this.recordCameraPerformance()
+    }
     this.rendererSession.renderer.render(this.sceneBundle.scene, this.sceneBundle.camera)
     this.recordStressFrame(now, workStartedAt)
     this.lastTime = now
@@ -284,12 +386,16 @@ export class GameRuntime {
     this.disposed = true
     cancelAnimationFrame(this.animationFrame)
     window.removeEventListener('resize', this.resize)
+    this.reducedMotionQuery?.removeEventListener('change', this.handleReducedMotionChange)
+    this.reducedMotionQuery = null
+    this.reducedMotion = false
     this.input?.stop()
     this.input = null
     this.removeAimingObject(false)
     this.pieceObjects.clear()
     this.physics?.dispose()
     this.physics = null
+    this.cameraFraming = null
     this.rendererSession?.dispose()
     this.rendererSession = null
     this.sceneBundle?.dispose()
@@ -302,5 +408,12 @@ export class GameRuntime {
     delete this.canvas.dataset.galleryGeometries
     delete this.canvas.dataset.galleryMaterials
     delete this.canvas.dataset.galleryTextureBytes
+    delete this.canvas.dataset.palettePieces
+    delete this.canvas.dataset.cameraTargetY
+    delete this.canvas.dataset.cameraDistance
+    delete this.canvas.dataset.cameraMode
+    delete this.canvas.dataset.cameraP95Work
+    delete this.canvas.dataset.cameraSamples
+    delete this.canvas.dataset.cameraTiming
   }
 }

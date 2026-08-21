@@ -14,7 +14,9 @@ import {
   UnsignedByteType,
   Vector2,
   type Material,
+  type Texture,
 } from 'three'
+import type { PieceDefinition } from '../pieces/catalog'
 import type { RendererBackend } from '../types'
 
 export type GalleryQualityProfile = 'high' | 'compatible'
@@ -34,6 +36,29 @@ export interface GalleryMaterialSet {
   environment: DataTexture
   diagnostics: GalleryMaterialDiagnostics
   dispose: () => void
+}
+
+export interface GlassOptics {
+  tint: Color
+  opticalThickness: number
+  attenuationDistance: number
+  roughness: number
+  compatibleOpacity: number
+}
+
+const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value))
+
+export function deriveGlassOptics(piece: PieceDefinition): GlassOptics {
+  const minimumDimension = Math.min(...piece.dimensions)
+  const depthFactor = clamp((minimumDimension - 0.34) / 0.54, 0, 1)
+  const sourceTint = new Color(piece.color)
+  return {
+    tint: sourceTint.clone().offsetHSL(0, 0.32, -0.13),
+    opticalThickness: clamp(minimumDimension * 0.82, 0.28, 0.72),
+    attenuationDistance: clamp(0.82 - depthFactor * 0.34, 0.48, 0.82),
+    roughness: clamp(0.105 - depthFactor * 0.025, 0.08, 0.105),
+    compatibleOpacity: clamp(0.74 + depthFactor * 0.08, 0.74, 0.82),
+  }
 }
 
 const byteNoise = (x: number, y: number, seed: number) => {
@@ -119,15 +144,18 @@ function createEnvironmentTexture(width: number) {
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const offset = (y * width + x) * 4
+      const horizontal = x / Math.max(1, width - 1)
       const vertical = 1 - y / Math.max(1, height - 1)
-      const keyBand = Math.exp(-((x / width - 0.26) ** 2) / 0.012)
-      const rimBand = Math.exp(-((x / width - 0.73) ** 2) / 0.02)
-      const lift = keyBand * 62 + rimBand * 34 + vertical * 22
+      const keyBand = Math.exp(-((horizontal - 0.2) ** 2) / 0.004)
+      const rimBand = Math.exp(-((horizontal - 0.68) ** 2) / 0.009)
+      const darkCard = Math.exp(-((horizontal - 0.45) ** 2) / 0.014)
+      const sideCard = Math.exp(-((horizontal - 0.9) ** 2) / 0.01)
+      const lift = keyBand * 112 + rimBand * 76 + vertical * 20 - darkCard * 72 - sideCard * 42
       pixels.set(
         [
-          Math.min(255, Math.round(118 + lift)),
-          Math.min(255, Math.round(113 + lift * 0.94)),
-          Math.min(255, Math.round(110 + lift * 0.9)),
+          clamp(Math.round(104 + lift), 24, 255),
+          clamp(Math.round(101 + lift * 0.94), 26, 255),
+          clamp(Math.round(105 + lift * 0.97), 30, 255),
           255,
         ],
         offset,
@@ -139,34 +167,36 @@ function createEnvironmentTexture(width: number) {
   return texture
 }
 
-export function createGlassMaterial(color: number, backend: RendererBackend) {
+export function createGlassMaterial(piece: PieceDefinition, backend: RendererBackend, environment: Texture) {
+  const optics = deriveGlassOptics(piece)
   const high = backend === 'webgpu'
   if (!high) {
     return new MeshStandardMaterial({
-      color: new Color(color),
-      metalness: 0.08,
-      roughness: 0.16,
-      envMapIntensity: 0.72,
+      color: optics.tint,
+      metalness: 0,
+      roughness: clamp(optics.roughness + 0.055, 0.15, 0.18),
+      envMap: environment,
+      envMapIntensity: 1.18,
       transparent: true,
-      opacity: 0.64,
+      opacity: optics.compatibleOpacity,
       depthWrite: false,
     })
   }
+  const surfaceTint = new Color(0xffffff).lerp(optics.tint, 0.52)
   return new MeshPhysicalMaterial({
-    color: new Color(color),
-    metalness: 0.03,
-    roughness: 0.08,
-    transmission: 0.58,
-    thickness: 0.62,
-    ior: 1.45,
-    clearcoat: 0.28,
-    clearcoatRoughness: 0.16,
-    envMapIntensity: 1.05,
-    transparent: true,
-    opacity: 0.72,
-    depthWrite: false,
-    attenuationColor: new Color(color),
-    attenuationDistance: 3.8,
+    color: surfaceTint,
+    metalness: 0,
+    roughness: optics.roughness,
+    transmission: 0.92,
+    thickness: optics.opticalThickness,
+    ior: 1.46,
+    dispersion: 0,
+    envMapIntensity: 1.45,
+    transparent: false,
+    opacity: 1,
+    depthWrite: true,
+    attenuationColor: optics.tint,
+    attenuationDistance: optics.attenuationDistance,
   })
 }
 
@@ -177,7 +207,7 @@ export function createGalleryMaterial(color: number, roughness = 0.84) {
 export function createGalleryMaterialSet(profile: GalleryQualityProfile): GalleryMaterialSet {
   const high = profile === 'high'
   const surfaceSize = high ? 128 : 64
-  const environmentWidth = high ? 128 : 64
+  const environmentWidth = high ? 256 : 128
   const shadowSize = high ? 64 : 32
   const surface = createSurfaceTextures(surfaceSize, high ? 1 : 0.66)
   const shadow = createSoftShadowTexture(shadowSize)

@@ -1,4 +1,4 @@
-import { Mesh, type BufferGeometry } from 'three'
+import { Mesh, MeshStandardMaterial, type BufferGeometry } from 'three'
 import { describe, expect, it } from 'vitest'
 import { GAME_CONFIG } from '../../src/game/config'
 import {
@@ -7,6 +7,7 @@ import {
 } from '../../src/game/rendering/createGalleryEnvironment'
 import { createGalleryMaterialSet } from '../../src/game/rendering/createMaterials'
 import { createSceneBundle } from '../../src/game/rendering/createScene'
+import { PIECE_CATALOG } from '../../src/game/pieces/catalog'
 
 describe('gallery environment', () => {
   it('initializes the WebGPU rect-area-light lookup textures exactly once', () => {
@@ -94,5 +95,19 @@ describe('gallery environment', () => {
     bundle.dispose()
     expect(highEnvironmentDisposals).toBe(1)
     expect(bundle.scene.children).toHaveLength(0)
+  })
+
+  it('keeps compatible reflection glass-local while sharing the owned environment', () => {
+    const bundle = createSceneBundle(16 / 9)
+    bundle.configureRendererBackend('webgl2')
+    const piece = bundle.createPieceObject(PIECE_CATALOG[0], 'webgl2')
+    const mesh = piece.children[0] as Mesh
+    const material = mesh.material as MeshStandardMaterial
+
+    expect(bundle.scene.environment).toBeNull()
+    expect(material.envMap).toBeDefined()
+    expect(material.envMap?.mapping).toBeDefined()
+
+    bundle.dispose()
   })
 })

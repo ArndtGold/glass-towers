@@ -20,6 +20,7 @@ describe('PhysicsWorld', () => {
     expect(contacts).toBe(1)
     expect(stabilizations).toBe(1)
     expect(fell).toBe(false)
+    expect(physics.snapshots()[0]).toMatchObject({ pieceId: 'prism', fallen: false })
     expect(physics.snapshots()[0].position.y).toBeGreaterThan(0)
     physics.dispose()
   })
@@ -32,6 +33,7 @@ describe('PhysicsWorld', () => {
     for (let index = 0; index < 600 && !fell; index += 1) fell = physics.step(1 / 60).fell
 
     expect(fell).toBe(true)
+    expect(physics.snapshots()[0]).toMatchObject({ pieceId: 'pillar', fallen: true })
     physics.dispose()
   })
 })
