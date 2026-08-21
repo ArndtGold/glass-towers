@@ -1,11 +1,25 @@
 import { Mesh, type BufferGeometry } from 'three'
 import { describe, expect, it } from 'vitest'
 import { GAME_CONFIG } from '../../src/game/config'
-import { createGalleryEnvironment } from '../../src/game/rendering/createGalleryEnvironment'
+import {
+  createGalleryEnvironment,
+  initializeWebGpuAreaLights,
+} from '../../src/game/rendering/createGalleryEnvironment'
 import { createGalleryMaterialSet } from '../../src/game/rendering/createMaterials'
 import { createSceneBundle } from '../../src/game/rendering/createScene'
 
 describe('gallery environment', () => {
+  it('initializes the WebGPU rect-area-light lookup textures exactly once', () => {
+    const first = initializeWebGpuAreaLights()
+    const second = initializeWebGpuAreaLights()
+
+    expect(second).toBe(first)
+    expect(first.LTC_FLOAT_1).toBeDefined()
+    expect(first.LTC_FLOAT_2).toBeDefined()
+    expect(first.LTC_HALF_1).toBeDefined()
+    expect(first.LTC_HALF_2).toBeDefined()
+  })
+
   it('builds one closed render-only environment without the old backdrop', () => {
     const geometries = new Map<string, BufferGeometry>()
     const materials = createGalleryMaterialSet('compatible')

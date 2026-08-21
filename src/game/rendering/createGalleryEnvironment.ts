@@ -12,6 +12,8 @@ import {
   type Material,
 } from 'three'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js'
+import { RectAreaLightNode } from 'three/webgpu'
 import type { GalleryMaterialRole, GalleryMaterialSet } from './createMaterials'
 
 type GeometryFactory = <T extends BufferGeometry>(key: string, create: () => T) => T
@@ -49,6 +51,15 @@ const transform = (position: [number, number, number], scale: [number, number, n
 const setRole = <T extends Object3D>(object: T, role: string) => {
   object.userData.galleryRole = role
   return object
+}
+
+let webGpuAreaLightTextures: ReturnType<typeof RectAreaLightTexturesLib.init> | null = null
+
+export function initializeWebGpuAreaLights() {
+  if (webGpuAreaLightTextures) return webGpuAreaLightTextures
+  webGpuAreaLightTextures = RectAreaLightTexturesLib.init()
+  RectAreaLightNode.setLTC(webGpuAreaLightTextures)
+  return webGpuAreaLightTextures
 }
 
 export function createGalleryEnvironment(
@@ -221,6 +232,7 @@ export function createGalleryEnvironment(
 
   const configureProfile = (profile: GalleryMaterialSet['profile']) => {
     const high = profile === 'high'
+    if (high) initializeWebGpuAreaLights()
     key.visible = high
     fill.visible = high
     compatibleKey.visible = !high

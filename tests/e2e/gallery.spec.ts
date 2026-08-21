@@ -31,6 +31,29 @@ const galleryMetrics = async (page: Page) => {
   }))
 }
 
+const canvasMeanLuminance = async (page: Page) => {
+  const canvas = page.getByLabel('Glass Towers game canvas')
+  return canvas.evaluate(async (element) => {
+    const source = element as HTMLCanvasElement
+    return new Promise<number>((resolve) => {
+      requestAnimationFrame(() => {
+        const probe = document.createElement('canvas')
+        probe.width = 32
+        probe.height = 18
+        const context = probe.getContext('2d', { willReadFrequently: true })
+        if (!context) return resolve(0)
+        context.drawImage(source, 0, 0, probe.width, probe.height)
+        const pixels = context.getImageData(0, 0, probe.width, probe.height).data
+        let luminance = 0
+        for (let index = 0; index < pixels.length; index += 4) {
+          luminance += pixels[index] * 0.2126 + pixels[index + 1] * 0.7152 + pixels[index + 2] * 0.0722
+        }
+        resolve(luminance / (pixels.length / 4))
+      })
+    })
+  })
+}
+
 const expectMetricsWithinBudget = (metrics: Awaited<ReturnType<typeof galleryMetrics>>) => {
   expect(metrics.groups).toBeGreaterThanOrEqual(8)
   expect(metrics.meshes).toBeGreaterThanOrEqual(10)
@@ -60,6 +83,7 @@ for (const [mode, query] of [['auto', ''], ['webgl2', '&renderer=webgl2']] as co
     const initialMetrics = await galleryMetrics(page)
     expectMetricsWithinBudget(initialMetrics)
     if (mode === 'webgl2') expect(initialMetrics.profile).toBe('compatible')
+    await expect.poll(() => canvasMeanLuminance(page), { timeout: 10_000 }).toBeGreaterThan(35)
     expect(await page.locator('canvas').count()).toBe(1)
     await page.screenshot({ path: `${evidenceDirectory}/${testInfo.project.name}-${mode}-1280x720-start.png` })
 
@@ -97,6 +121,7 @@ for (const [mode, query] of [['auto', ''], ['webgl2', '&renderer=webgl2']] as co
     const metrics = await galleryMetrics(page)
     expectMetricsWithinBudget(metrics)
     if (mode === 'webgl2') expect(metrics.profile).toBe('compatible')
+    await expect.poll(() => canvasMeanLuminance(page), { timeout: 10_000 }).toBeGreaterThan(35)
     await expect(page.getByTestId('score')).toBeVisible()
     await expect(page.getByTestId('renderer-backend')).toBeVisible()
     await canvas.click()
