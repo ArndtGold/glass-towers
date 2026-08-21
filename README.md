@@ -33,6 +33,34 @@ Der Durchlauf endet, sobald ein Stein den Sockel verfehlt oder die Skulptur so i
 - Maus-, Touch- und Tastatursteuerung
 - Unterstützung für `prefers-reduced-motion`
 
+## Wie Glass Towers entstanden ist
+
+Glass Towers entstand nicht in einem einzigen Generierungsschritt. Das Spiel wurde in klar abgegrenzten Arbeitsabschnitten aufgebaut und nach jeder Erweiterung erneut gegen den bestehenden Stand geprüft. Die Iterationen beschreiben Entwicklungsschwerpunkte und sind nicht als eigenständige Releases zu verstehen.
+
+| Iteration | Schwerpunkt | Ergebnis |
+|---|---|---|
+| 1 | Spielbarer Kern | Three.js- und Rapier-Grundlage, Sockel, Glasformen, Platzieren und Fallenlassen, Score, Bestwert, Vorschau und Restart |
+| 2 | Browserkompatibilität | Automatischer WebGL2-Fallback für Safari und ein kontrollierter Fehlerzustand, wenn kein Renderer initialisiert werden kann |
+| 3 | Galerieumgebung | Verfeinerte Geometrie, Studiobeleuchtung und ein vollständig gerenderter Hintergrund anstelle eines statischen Bildcharakters |
+| 4 | Glasdarstellung | Backendgerechte Materialprofile, höherer Kontrast und fünf in WebGPU und WebGL2 klar unterscheidbare Farben |
+| 5 | Kameraführung | Weiches Tracking beim Turmaufbau, kontrollierte Abwärtsfahrt beim Kollaps, responsive Safe Frames und Reduced Motion |
+
+### Was AGDF beigetragen hat
+
+Von Anfang an wurde das AI native Governance and Delivery Framework (AGDF) eingesetzt. AGDF hat die kreative Richtung des Spiels nicht ersetzt. Sein Beitrag bestand darin, Änderungen nachvollziehbar zu begrenzen, Entscheidungen zu dokumentieren und Behauptungen durch passende Evidenz abzusichern.
+
+Im Projekt wurde das insbesondere an diesen Punkten sichtbar:
+
+- Anforderungen, Lösungsdesign, Aufgaben, Tests und Abnahme blieben über eine gemeinsame Artefaktkette miteinander verbunden.
+- Visuelle Ziele wie „fünf unterscheidbare Farben“ oder „die relevante Struktur bleibt sichtbar“ wurden zu überprüfbaren Akzeptanzkriterien.
+- Brownfield-Analysen halfen, bestehende Runtime-, Rendering-, Material- und Teststrukturen wiederzuverwenden, statt parallele Lösungen einzuführen.
+- WebGPU, WebGL2 und Safari wurden als getrennte Kompatibilitäts- und Evidenzpfade behandelt.
+- Automatisierte QA, sichtbare Browser-Evidenz und direkte Nutzerabnahme blieben voneinander unterscheidbar.
+- Bereits vorhandene Änderungen im gemeinsamen Worktree wurden erfasst und vor unbeabsichtigtem Überschreiben geschützt.
+- Fachliche Freigaben führten nicht automatisch zu Commit, Push, Pull Request oder Release.
+
+Dadurch wurde nicht einfach mehr Prozess erzeugt: Die strukturierten Erweiterungen erhielten einen klaren Umfang, messbare Erfolgskriterien und eine überprüfbare Abschlussgrenze.
+
 ## Grafikmodi und Browser
 
 Das Badge unten links zeigt den aktiven Renderer:
