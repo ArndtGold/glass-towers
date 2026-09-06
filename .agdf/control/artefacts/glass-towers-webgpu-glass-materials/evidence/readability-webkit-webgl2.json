@@ -1,0 +1,14 @@
+{
+  "viewport": "1280x720",
+  "seed": 152,
+  "start": {
+    "edgeGradient": 5.429137257861767,
+    "innerOuter": 4.958081883885342,
+    "chromaVariation": 20.24436090225564
+  },
+  "score3": {
+    "edgeGradient": 5.719275119496963,
+    "innerOuter": 8.219699759688893,
+    "chromaVariation": 22.464017185821696
+  }
+}

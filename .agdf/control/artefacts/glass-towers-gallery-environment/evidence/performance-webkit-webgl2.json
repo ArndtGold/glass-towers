@@ -1,0 +1,13 @@
+{
+  "viewport": "640x360",
+  "bodies": 20,
+  "duration_ms": 10000,
+  "profile": "compatible",
+  "drawCalls": 11,
+  "geometries": 11,
+  "materials": 6,
+  "textureBytes": 86016,
+  "samples": 222,
+  "p95Frame": 110,
+  "p95Work": 3
+}

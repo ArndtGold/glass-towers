@@ -1,0 +1,11 @@
+{
+  "browserProject": "webkit",
+  "backend": "webgl2",
+  "pieces": 20,
+  "warmupMs": 2000,
+  "measurementMs": 10000,
+  "samples": 300,
+  "cameraP95WorkMs": 1,
+  "timing": "coarse",
+  "hardBudgetEvaluated": false
+}
